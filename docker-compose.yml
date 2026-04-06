@@ -1,0 +1,98 @@
+name: maze-adventure-game
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maze_adventure}
+      POSTGRES_USER: ${POSTGRES_USER:-maze}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maze}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-maze} -d ${POSTGRES_DB:-maze_adventure}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    image: node:22-alpine
+    profiles: ["app"]
+    working_dir: /workspace/apps/server
+    command: >
+      sh -c "
+      if [ -f package.json ]; then
+        npm install &&
+        npm run dev;
+      else
+        echo 'apps/server is not initialized yet. Add a package.json and dev script to start the backend service.' &&
+        sleep infinity;
+      fi"
+    environment:
+      NODE_ENV: development
+      PORT: ${SERVER_PORT:-3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-maze}:${POSTGRES_PASSWORD:-maze}@postgres:5432/${POSTGRES_DB:-maze_adventure}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - .:/workspace
+      - server-node-modules:/workspace/apps/server/node_modules
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  client:
+    image: node:22-alpine
+    profiles: ["app"]
+    working_dir: /workspace/apps/client
+    command: >
+      sh -c "
+      if [ -f package.json ]; then
+        npm install &&
+        npm run dev -- --host 0.0.0.0 --port ${CLIENT_PORT:-5173};
+      else
+        echo 'apps/client is not initialized yet. Add a package.json and dev script to start the frontend service.' &&
+        sleep infinity;
+      fi"
+    environment:
+      NODE_ENV: development
+      VITE_API_BASE_URL: http://localhost:${SERVER_PORT:-3000}
+      VITE_WS_URL: ws://localhost:${SERVER_PORT:-3000}
+    volumes:
+      - .:/workspace
+      - client-node-modules:/workspace/apps/client/node_modules
+    ports:
+      - "${CLIENT_PORT:-5173}:5173"
+    depends_on:
+      server:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
+  server-node-modules:
+  client-node-modules:
