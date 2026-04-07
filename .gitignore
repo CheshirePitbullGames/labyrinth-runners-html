@@ -3,8 +3,6 @@
 .env.local
 .env.*.local
 
-package-lock.json
-
 node_modules/
 apps/*/node_modules/
 packages/*/node_modules/
@@ -12,6 +10,7 @@ packages/*/node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 .idea/
 .vscode/
