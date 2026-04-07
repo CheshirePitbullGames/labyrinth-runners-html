@@ -1,0 +1,17 @@
+{
+  "name": "maze-adventure-game",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@10.9.4",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @maze/shared && npm run build --workspace @maze/server && npm run build --workspace @maze/client",
+    "typecheck": "npm run typecheck --workspace @maze/shared && npm run typecheck --workspace @maze/server && npm run typecheck --workspace @maze/client",
+    "dev:server": "npm run build --workspace @maze/shared && npm run dev --workspace @maze/server",
+    "dev:client": "npm run build --workspace @maze/shared && npm run dev --workspace @maze/client",
+    "dev": "npm run build --workspace @maze/shared && npm run dev --workspace @maze/server"
+  }
+}

@@ -1,64 +1,109 @@
 # Maze Adventure Game
 
-Maze Adventure Game is a browser-first multiplayer PvPvE maze crawler built around
-procedural rooms, real-time combat, extraction pressure, and session-based
-roguelite progression. This repository is being initialized with the core project
-documentation and local development infrastructure needed to begin implementation.
+Maze Adventure Game is a browser-first multiplayer PvPvE maze crawler built
+around procedural rooms, real-time combat, extraction pressure, and
+session-based roguelite progression.
 
-## Vision
+This repository now uses a **monorepo** layout with separate client and server
+applications plus a shared package for protocol contracts.
 
-Players enter dangerous procedurally generated mazes, loot gear, survive monsters,
-outplay or cooperate with rival players, and push toward a central boss objective
-while an outer hazard forces the match inward.
+## Architecture Direction
 
-The long-term product direction combines:
+The recommended structure for this project is:
 
-- online multiplayer action-adventure
-- room-based maze exploration
-- PvPvE encounters
-- extraction and survival tension
-- light roguelite session structure
-- server-authoritative browser gameplay
+- **one repository**
+- **separate client and server apps**
+- **shared protocol/types package**
+- **REST for account and meta flows**
+- **WebSocket for realtime gameplay**
+- **server-authoritative simulation**
 
-## Planned Stack
+This is the best balance for an early multiplayer game because it keeps
+contracts, DTOs, event names, and shared config close together while still
+keeping deployment boundaries clean.
+
+## Tech Stack
 
 ### Client
 
 - HTML5
 - TypeScript
-- Phaser 3
-- WebSocket client for live gameplay
-- REST API integration for account and meta systems
+- Vite
+- Phaser 3 later for gameplay scenes
+- Socket.IO client for realtime communication
 
 ### Server
 
 - Node.js
 - TypeScript
 - Fastify
-- Socket.IO or `ws`
-- Redis for transient state and matchmaking support
-- PostgreSQL for persistent player and progression data
+- Socket.IO
+- Redis
+- PostgreSQL
+
+### Shared
+
+- shared event names
+- shared payload types
+- shared runtime constants
+- shared DTOs and schemas
 
 ## Repository Layout
-
-This repository currently contains the initial documentation and infrastructure
-scaffold. The intended project layout is:
 
 ```text
 .
 |-- apps/
-|   |-- client/        # Browser game client (planned)
-|   `-- server/        # API + match server (planned)
+|   |-- client/        # Browser frontend
+|   `-- server/        # REST API + realtime game server
+|-- packages/
+|   `-- shared/        # Shared protocol/types/constants
 |-- docs/
 |   `-- GAME_DESIGN_DOCUMENT.md
-|-- docker-compose.yml
+|-- compose.yaml
 |-- .env.example
-`-- README.md
+|-- package.json
+`-- tsconfig.base.json
 ```
 
 ## Documentation
 
 - [Game Design Document](docs/GAME_DESIGN_DOCUMENT.md)
+
+## Communication Model
+
+### REST / HTTP
+
+Use REST for:
+
+- login and auth
+- profile/account data
+- cosmetics/store
+- matchmaking entry and leave
+- progression and meta systems
+
+### WebSocket
+
+Use WebSocket for:
+
+- player input
+- room snapshots
+- door and hazard state
+- combat events
+- live match updates
+- reconnect flow
+
+The current scaffold uses **Socket.IO** to make early iteration, reconnect
+handling, and room-based messaging easier.
+
+## Docker Compose Naming
+
+The modern preferred filename is:
+
+- `compose.yaml`
+
+This is the canonical name recognized by modern Docker Compose. Older names like
+`docker-compose.yml` still work in many setups, but `compose.yaml` is the better
+default for new projects.
 
 ## Local Development
 
@@ -68,30 +113,70 @@ scaffold. The intended project layout is:
 cp .env.example .env
 ```
 
-### 2. Start core infrastructure
-
-This brings up PostgreSQL and Redis, which are the required backing services for
-the planned backend architecture.
+### 2. Install dependencies locally
 
 ```bash
-docker compose up -d postgres redis
+npm install
 ```
 
-### 3. Start the application profile later
+### 3. Run the apps without Docker
 
-The compose file also includes `client` and `server` services under the `app`
-profile. These services are ready to use once `apps/client` and `apps/server`
-have been initialized with their package manifests and dev scripts.
+In separate terminals:
 
 ```bash
-docker compose --profile app up
+npm run dev:server
+npm run dev:client
 ```
 
-### 4. Inspect logs
+### 4. Start the full stack with Docker Compose
 
 ```bash
-docker compose logs -f postgres redis
+docker compose up --build
 ```
+
+This starts:
+
+- PostgreSQL
+- Redis
+- backend server on `http://localhost:3000`
+- frontend client on `http://localhost:5173`
+
+### 5. Inspect logs
+
+```bash
+docker compose logs -f client server postgres redis
+```
+
+## Scaffolded Packages
+
+### `packages/shared`
+
+Contains the first shared protocol definitions for:
+
+- health endpoint constants
+- player ready payload
+- ping payload
+- match snapshot payload
+- system message payload
+- typed Socket.IO event contracts
+
+### `apps/server`
+
+Contains a minimal Fastify + Socket.IO server with:
+
+- `GET /health`
+- `GET /api/config`
+- a typed realtime connection
+- an initial lobby snapshot event
+
+### `apps/client`
+
+Contains a minimal Vite client that:
+
+- calls the health endpoint
+- opens a Socket.IO connection
+- sends a `player:ready` event
+- renders server responses onscreen
 
 ## Initial Architecture Notes
 
@@ -104,26 +189,10 @@ docker compose logs -f postgres redis
 - The first milestone should target a desktop browser MVP with a small player
   count and a single region/theme.
 
-## MVP Focus
+## Next Recommended Steps
 
-The initial playable target is one browser-based maze run with:
-
-- account login
-- one region tileset
-- 2 to 4 players
-- procedural room-based maze generation
-- basic PvE and PvP combat
-- chest, trap, merchant, and boss rooms
-- hazard pressure toward the center
-- temporary in-match progression
-- cosmetic-only persistent account progression
-
-## Next Steps
-
-Recommended follow-up work after this repo initialization:
-
-1. scaffold `apps/client` with Phaser + TypeScript + Vite
-2. scaffold `apps/server` with Fastify + WebSocket support
-3. define shared game protocol and room state schemas
-4. prototype maze generation and room transition rules
-5. add local development scripts, linting, and test foundations
+1. add Phaser to `apps/client`
+2. model room and entity snapshots in `packages/shared`
+3. add database and Redis adapters in `apps/server`
+4. add matchmaking and session lifecycle modules
+5. define a first maze generation prototype

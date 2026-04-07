@@ -37,26 +37,24 @@ services:
       retries: 10
 
   server:
-    image: node:22-alpine
-    profiles: ["app"]
-    working_dir: /workspace/apps/server
-    command: >
-      sh -c "
-      if [ -f package.json ]; then
-        npm install &&
-        npm run dev;
-      else
-        echo 'apps/server is not initialized yet. Add a package.json and dev script to start the backend service.' &&
-        sleep infinity;
-      fi"
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.dev
+    restart: unless-stopped
     environment:
       NODE_ENV: development
-      PORT: ${SERVER_PORT:-3000}
+      HOST: 0.0.0.0
+      PORT: 3000
+      CLIENT_ORIGIN: http://localhost:${CLIENT_PORT:-5173}
+      PUBLIC_API_BASE_URL: http://localhost:${SERVER_PORT:-3000}
+      SOCKET_PATH: /socket.io
       DATABASE_URL: postgresql://${POSTGRES_USER:-maze}:${POSTGRES_PASSWORD:-maze}@postgres:5432/${POSTGRES_DB:-maze_adventure}
       REDIS_URL: redis://redis:6379
     volumes:
       - .:/workspace
-      - server-node-modules:/workspace/apps/server/node_modules
+      - server-root-node-modules:/workspace/node_modules
+    command: >
+      sh -c "npm install && npm run dev:server"
     ports:
       - "${SERVER_PORT:-3000}:3000"
     depends_on:
@@ -66,25 +64,19 @@ services:
         condition: service_healthy
 
   client:
-    image: node:22-alpine
-    profiles: ["app"]
-    working_dir: /workspace/apps/client
-    command: >
-      sh -c "
-      if [ -f package.json ]; then
-        npm install &&
-        npm run dev -- --host 0.0.0.0 --port ${CLIENT_PORT:-5173};
-      else
-        echo 'apps/client is not initialized yet. Add a package.json and dev script to start the frontend service.' &&
-        sleep infinity;
-      fi"
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile.dev
+    restart: unless-stopped
     environment:
       NODE_ENV: development
       VITE_API_BASE_URL: http://localhost:${SERVER_PORT:-3000}
-      VITE_WS_URL: ws://localhost:${SERVER_PORT:-3000}
+      VITE_WS_URL: http://localhost:${SERVER_PORT:-3000}
     volumes:
       - .:/workspace
-      - client-node-modules:/workspace/apps/client/node_modules
+      - client-root-node-modules:/workspace/node_modules
+    command: >
+      sh -c "npm install && npm run dev --workspace @maze/client -- --host 0.0.0.0 --port 5173"
     ports:
       - "${CLIENT_PORT:-5173}:5173"
     depends_on:
@@ -94,5 +86,5 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  server-node-modules:
-  client-node-modules:
+  server-root-node-modules:
+  client-root-node-modules:
