@@ -1,11 +1,16 @@
 export const API_HEALTH_ENDPOINT = "/health";
+export const API_SESSION_ENDPOINT = "/api/session";
 
-export const DEFAULT_CLIENT_PLAYER_NAME = "Adventurer";
+export const PLAYER_NAME_MAX_LENGTH = 32;
 
 export interface ApiHealthResponse {
   status: "ok";
   service: "server";
   timestamp: string;
+}
+
+export interface ApiErrorResponse {
+  error: string;
 }
 
 export interface MatchSnapshot {
@@ -18,6 +23,31 @@ export interface MatchSnapshot {
 export interface SystemMessagePayload {
   message: string;
   level: "info" | "warning" | "error";
+}
+
+export interface SessionUser {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastLoginAt: string;
+  loginCount: number;
+}
+
+export interface CreateSessionRequest {
+  name: string;
+}
+
+export interface SessionResponse {
+  sessionToken: string;
+  user: SessionUser;
+  isNewUser: boolean;
+}
+
+export interface AdminUserLoginPayload {
+  user: SessionUser;
+  isNewUser: boolean;
+  loginAt: string;
+  activeSessions: number;
 }
 
 export interface PlayerReadyPayload {
@@ -34,6 +64,7 @@ export interface ClientRuntimeConfig {
 }
 
 export interface ServerToClientEvents {
+  "admin:user:login": (payload: AdminUserLoginPayload) => void;
   "match:snapshot": (payload: MatchSnapshot) => void;
   "system:message": (payload: SystemMessagePayload) => void;
 }
