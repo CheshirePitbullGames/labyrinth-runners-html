@@ -128,7 +128,14 @@ npm run dev:server
 npm run dev:client
 ```
 
-### 4. Start the full stack with Docker Compose
+### 4. Run the automated checks
+
+```bash
+npm run typecheck
+npm test
+```
+
+### 5. Start the full stack with Docker Compose
 
 ```bash
 docker compose up --build
@@ -141,7 +148,7 @@ This starts:
 - backend server on `http://localhost:3000`
 - frontend client on `http://localhost:5173`
 
-### 5. Inspect logs
+### 6. Inspect logs
 
 ```bash
 docker compose logs -f client server postgres redis
