@@ -1,0 +1,175 @@
+name: Build and deploy containers
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type checks
+        run: npm run typecheck
+
+      - name: Run automated tests
+        run: npm test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: server
+            dockerfile: apps/server/Dockerfile
+            build_args: ""
+          - service: client
+            dockerfile: apps/client/Dockerfile
+            build_args: |
+              VITE_API_BASE_URL=${{ secrets.API_BASE_URL || 'http://localhost:3000' }}
+              VITE_WS_URL=${{ secrets.API_BASE_URL || 'http://localhost:3000' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Derive lowercase image prefix
+        id: image_prefix
+        run: echo "value=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and optionally push ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.image_prefix.outputs.value }}/${{ matrix.service }}:${{ github.sha }}
+          build-args: ${{ matrix.build_args }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: hetzner-deploy
+      cancel-in-progress: true
+    env:
+      DEPLOY_PATH: ${{ secrets.HETZNER_DEPLOY_PATH || '/opt/maze-adventure-game' }}
+      IMAGE_TAG: ${{ github.sha }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'maze_adventure' }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'maze' }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      CLIENT_PORT: ${{ secrets.CLIENT_PORT || '80' }}
+      SERVER_PORT: ${{ secrets.SERVER_PORT || '3000' }}
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      SOCKET_PATH: ${{ secrets.SOCKET_PATH || '/socket.io' }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Derive lowercase image prefix
+        id: image_prefix
+        run: echo "value=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare deploy directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: ${{ secrets.HETZNER_PORT || '22' }}
+          script_stop: true
+          envs: DEPLOY_PATH
+          script: |
+            mkdir -p "$DEPLOY_PATH"
+
+      - name: Copy compose file to Hetzner
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: ${{ secrets.HETZNER_PORT || '22' }}
+          source: deploy/compose.hetzner.yaml
+          target: ${{ env.DEPLOY_PATH }}
+          strip_components: 1
+
+      - name: Deploy updated stack
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: ${{ secrets.HETZNER_PORT || '22' }}
+          script_stop: true
+          envs: DEPLOY_PATH,IMAGE_TAG,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,CLIENT_PORT,SERVER_PORT,APP_BASE_URL,API_BASE_URL,SOCKET_PATH,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+
+            : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD secret must be set}"
+            : "${APP_BASE_URL:?APP_BASE_URL secret must be set}"
+            : "${API_BASE_URL:?API_BASE_URL secret must be set}"
+            : "${GHCR_USERNAME:?GHCR_USERNAME secret must be set}"
+            : "${GHCR_TOKEN:?GHCR_TOKEN secret must be set}"
+
+            GHCR_IMAGE_PREFIX='${{ steps.image_prefix.outputs.value }}'
+
+            {
+              printf 'GHCR_IMAGE_PREFIX=%s\n' "$GHCR_IMAGE_PREFIX"
+              printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+              printf 'POSTGRES_DB=%s\n' "$POSTGRES_DB"
+              printf 'POSTGRES_USER=%s\n' "$POSTGRES_USER"
+              printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+              printf 'CLIENT_PORT=%s\n' "$CLIENT_PORT"
+              printf 'SERVER_PORT=%s\n' "$SERVER_PORT"
+              printf 'CLIENT_ORIGIN=%s\n' "$APP_BASE_URL"
+              printf 'PUBLIC_API_BASE_URL=%s\n' "$API_BASE_URL"
+              printf 'SOCKET_PATH=%s\n' "$SOCKET_PATH"
+            } > "$DEPLOY_PATH/.env"
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            docker compose --env-file "$DEPLOY_PATH/.env" -f "$DEPLOY_PATH/compose.hetzner.yaml" pull
+            docker compose --env-file "$DEPLOY_PATH/.env" -f "$DEPLOY_PATH/compose.hetzner.yaml" up -d --remove-orphans
+            docker image prune -f

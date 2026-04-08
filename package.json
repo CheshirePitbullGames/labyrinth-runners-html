@@ -8,10 +8,12 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace @maze/shared && npm run build --workspace @maze/server && npm run build --workspace @maze/client",
-    "typecheck": "npm run typecheck --workspace @maze/shared && npm run typecheck --workspace @maze/server && npm run typecheck --workspace @maze/client",
-    "dev:server": "npm run build --workspace @maze/shared && npm run dev --workspace @maze/server",
-    "dev:client": "npm run build --workspace @maze/shared && npm run dev --workspace @maze/client",
-    "dev": "npm run build --workspace @maze/shared && npm run dev --workspace @maze/server"
+    "clean:shared": "rm -f packages/shared/tsconfig.tsbuildinfo && rm -rf packages/shared/dist",
+    "build": "npm run clean:shared && npm run build --workspace @maze/shared && npm run build --workspace @maze/server && npm run build --workspace @maze/client",
+    "test": "npm run build && npm run test --workspace @maze/server",
+    "typecheck": "npm run clean:shared && npm run build --workspace @maze/shared && npm run typecheck --workspace @maze/server && npm run typecheck --workspace @maze/client",
+    "dev:server": "npm run clean:shared && npm run build --workspace @maze/shared && npm run dev --workspace @maze/server",
+    "dev:client": "npm run clean:shared && npm run build --workspace @maze/shared && npm run dev --workspace @maze/client",
+    "dev": "npm run clean:shared && npm run build --workspace @maze/shared && npm run dev --workspace @maze/server"
   }
 }

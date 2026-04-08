@@ -1,0 +1,66 @@
+name: maze-adventure-game
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maze_adventure}
+      POSTGRES_USER: ${POSTGRES_USER:-maze}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-maze} -d ${POSTGRES_DB:-maze_adventure}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    image: ${GHCR_IMAGE_PREFIX:?GHCR_IMAGE_PREFIX must be set}/server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:?CLIENT_ORIGIN must be set}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?PUBLIC_API_BASE_URL must be set}
+      SOCKET_PATH: ${SOCKET_PATH:-/socket.io}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-maze}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-maze_adventure}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+
+  client:
+    image: ${GHCR_IMAGE_PREFIX:?GHCR_IMAGE_PREFIX must be set}/client:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+    ports:
+      - "${CLIENT_PORT:-80}:80"
+
+volumes:
+  postgres-data:
+  redis-data:

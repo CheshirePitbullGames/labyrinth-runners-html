@@ -128,7 +128,14 @@ npm run dev:server
 npm run dev:client
 ```
 
-### 4. Start the full stack with Docker Compose
+### 4. Run the automated checks
+
+```bash
+npm run typecheck
+npm test
+```
+
+### 5. Start the full stack with Docker Compose
 
 ```bash
 docker compose up --build
@@ -141,10 +148,68 @@ This starts:
 - backend server on `http://localhost:3000`
 - frontend client on `http://localhost:5173`
 
-### 5. Inspect logs
+### 6. Inspect logs
 
 ```bash
 docker compose logs -f client server postgres redis
+```
+
+## GitHub Actions Deployment
+
+The repository includes a GitHub Actions workflow at
+`.github/workflows/docker-deploy.yml` that:
+
+- builds production images for `apps/server` and `apps/client`
+- pushes those images to `ghcr.io/<owner>/<repo>/server:<commit-sha>` and
+  `ghcr.io/<owner>/<repo>/client:<commit-sha>`
+- connects to a Hetzner server over SSH
+- updates a Docker Compose stack using `deploy/compose.hetzner.yaml`
+
+### Required GitHub Actions secrets
+
+Set these repository secrets before enabling the workflow:
+
+- `HETZNER_HOST` - server hostname or IP
+- `HETZNER_USER` - SSH user for deployments
+- `HETZNER_SSH_KEY` - private key GitHub Actions uses to connect
+- `GHCR_USERNAME` - GitHub username or machine user that can pull GHCR packages
+- `GHCR_TOKEN` - GitHub token with `read:packages`
+- `APP_BASE_URL` - public client URL, for example `https://game.example.com`
+- `API_BASE_URL` - public API/WebSocket URL, for example
+  `https://api.example.com`
+- `POSTGRES_PASSWORD` - database password for the production database container
+
+Optional secrets:
+
+- `HETZNER_PORT` - defaults to `22`
+- `HETZNER_DEPLOY_PATH` - defaults to `/opt/maze-adventure-game`
+- `POSTGRES_DB` - defaults to `maze_adventure`
+- `POSTGRES_USER` - defaults to `maze`
+- `CLIENT_PORT` - defaults to `80`
+- `SERVER_PORT` - defaults to `3000`
+- `SOCKET_PATH` - defaults to `/socket.io`
+
+### Workflow behavior
+
+- `pull_request` runs build-only validation for both Docker images
+- `push` to `main` builds, publishes, and deploys the updated images
+- `workflow_dispatch` lets you manually trigger the same publish and deploy flow
+
+### Hetzner host prerequisites
+
+The target server should already have:
+
+- Docker Engine installed
+- Docker Compose v2 available as `docker compose`
+- network access to `ghcr.io`
+- permission for the configured SSH user to run Docker commands
+
+The deployment writes an `.env` file into the remote deploy directory and then
+runs:
+
+```bash
+docker compose --env-file .env -f compose.hetzner.yaml pull
+docker compose --env-file .env -f compose.hetzner.yaml up -d --remove-orphans
 ```
 
 ## Scaffolded Packages
