@@ -41,6 +41,25 @@ const startRealtimeServer = async () => {
   };
 };
 
+/**
+ * The server emits some socket events immediately after connection, so tests
+ * register the listener before connecting and fail fast if the event never arrives.
+ */
+const waitForSocketEvent = (socket, eventName, timeoutMs = 2000) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off(eventName, handleEvent);
+      reject(new Error(`Timed out waiting for socket event: ${eventName}`));
+    }, timeoutMs);
+
+    const handleEvent = (payload) => {
+      clearTimeout(timer);
+      resolve(payload);
+    };
+
+    socket.once(eventName, handleEvent);
+  });
+
 test("GET /health returns server status", async () => {
   const app = await createTestApp();
 
@@ -255,10 +274,14 @@ test("websocket authenticates players and emits admin login notifications", asyn
       auth: {
         role: "admin",
       },
+      autoConnect: false,
       reconnection: false,
     });
 
-    await once(adminSocket, "connect");
+    const adminConnected = once(adminSocket, "connect");
+    const adminLoginEvent = waitForSocketEvent(adminSocket, "admin:user:login");
+    adminSocket.connect();
+    await adminConnected;
 
     const loginResponse = await app.inject({
       method: "POST",
@@ -271,7 +294,7 @@ test("websocket authenticates players and emits admin login notifications", asyn
     assert.equal(loginResponse.statusCode, 200);
     const session = loginResponse.json();
 
-    const [adminLoginPayload] = await once(adminSocket, "admin:user:login");
+    const adminLoginPayload = await adminLoginEvent;
     assert.equal(adminLoginPayload.user.id, session.user.id);
     assert.equal(adminLoginPayload.user.name, "Explorer One");
     assert.equal(adminLoginPayload.isNewUser, true);
@@ -284,23 +307,29 @@ test("websocket authenticates players and emits admin login notifications", asyn
       auth: {
         sessionToken: session.sessionToken,
       },
+      autoConnect: false,
       reconnection: false,
     });
 
-    await once(playerSocket, "connect");
+    const playerConnected = once(playerSocket, "connect");
+    const matchSnapshotEvent = waitForSocketEvent(playerSocket, "match:snapshot");
+    const welcomeMessageEvent = waitForSocketEvent(playerSocket, "system:message");
+    playerSocket.connect();
+    await playerConnected;
 
-    const [matchSnapshot] = await once(playerSocket, "match:snapshot");
+    const matchSnapshot = await matchSnapshotEvent;
     assert.equal(matchSnapshot.roomId, "room-start-001");
 
-    const [welcomeMessage] = await once(playerSocket, "system:message");
+    const welcomeMessage = await welcomeMessageEvent;
     assert.equal(welcomeMessage.level, "info");
     assert.equal(welcomeMessage.message, "Welcome back, Explorer One.");
 
+    const joinedMessageEvent = waitForSocketEvent(playerSocket, "system:message");
     playerSocket.emit("player:ready", {
       playerName: "Ignored Name",
     });
 
-    const [joinedMessage] = await once(playerSocket, "system:message");
+    const joinedMessage = await joinedMessageEvent;
     assert.equal(joinedMessage.level, "info");
     assert.equal(joinedMessage.message, "Explorer One joined the maze lobby");
 
